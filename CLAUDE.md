@@ -49,7 +49,15 @@ For version comparisons, use the Version data type. Integer fits only the major 
 
 ## Verifying changes
 
-There's no test suite in the repo. These are the checks used so far.
+The test harnesses live in `Tests/`, which is gitignored: it exists only on the machine where it was created, never in a clone. Run them from the repo root:
+
+```bash
+pwsh -NoProfile -File Tests/Invoke-RequirementTests.ps1   # file and WMI scripts
+pwsh -NoProfile -File Tests/Invoke-AcrobatTests.ps1       # Acrobat script, plus a check that the encoding keeps real versions in order
+pwsh -NoProfile -File Tests/Test-ScriptQuality.ps1        # lint, ASCII-only, help parses, #Requires 5.1, for every script
+```
+
+Each one prints a PASS/FAIL table and a pass count. The per-case script copies they run are written inside `Tests/`, so they're ignored too. When you add a script or change behavior, extend the harnesses. Without `Tests/`, run the same checks by hand:
 
 **Lint.** This runs the default rules plus the Windows PowerShell 5.1 compatibility rules in one pass; a `-Settings` hashtable with only `Rules` keeps the default rule set. Expect no findings.
 

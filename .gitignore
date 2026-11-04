@@ -2,3 +2,6 @@
 Thumbs.db
 *.log
 *.tmp
+
+# Local test harnesses and dev work, never committed
+Tests/
