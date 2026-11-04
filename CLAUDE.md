@@ -11,9 +11,9 @@ Development happens on macOS with PowerShell 7.6. The scripts target Windows Pow
 ## Output contract (every script)
 
 - **Exit 0:** exactly one line on STDOUT, written with `Write-Output`.
-- **Exit 1:** nothing to report (the app is missing, or its version can't be read). Intune ignores output on any non-zero exit, so a missing app never meets an Integer or Version rule under any operator. Rules that target devices without the app use Boolean Equals False. Don't replace exit 1 with a sentinel value such as `0`.
+- **Exit 1:** nothing to report (the app is missing, or its version can't be read). Microsoft documents only that Intune reads STDOUT on exit 0. It doesn't document what a non-zero exit means for a requirement rule; the scripts assume the rule isn't met, as Microsoft documents for detection scripts. So a missing app is expected never to meet an Integer or Version rule. Keep the docs and `.OUTPUTS` wording clear about which parts are documented and which are assumed. Rules that target devices without the app use Boolean Equals False. Don't replace exit 1 with a sentinel value such as `0`.
 - **Exit 2:** script error. A top-level `trap` produces it; the trap is hoisted, so with `$ErrorActionPreference = 'Stop'` it catches every error in the script.
-- **Diagnostics:** write them with `[Console]::Error.WriteLine(...)`. Never use `Write-Host`, `Write-Warning`, `Write-Verbose` or `Write-Information`: when Windows PowerShell runs non-interactively they can reach STDOUT and corrupt the value Intune parses.
+- **Diagnostics:** write them with `[Console]::Error.WriteLine(...)`. Never use `Write-Host`, `Write-Warning`, `Write-Verbose` or `Write-Information`: when Windows PowerShell runs non-interactively they can reach STDOUT and corrupt the value Intune parses. Write diagnostics only on a non-zero exit: Microsoft documents that any STDERR output makes a *detection* script count as not installed even with exit 0, and doesn't say whether that applies to requirement scripts.
 
 ## Script anatomy
 
@@ -44,6 +44,11 @@ Never query `Win32_Product`, or any other class served by the MSI WMI provider (
   - Not removing the dots: that would exceed Int32, and Intune doesn't document the width of its Integer type.
   - Only builds matching `[23]\d{4}` count (2 = Continuous track, 3 = Classic).
   - A release of 100 or more throws (exit 2) rather than emit a value that sorts wrongly.
+- **`OperatingSystem/Get-OperatingSystemRequirement.ps1`** mirrors a Configuration Manager *Device › Operating system › One of* rule. `$AllowedOperatingSystems` takes the console's entry names, and the output is always Boolean.
+  - Each entry matches exactly one Windows version, architecture and edition, as in Configuration Manager: Windows 10 entries don't match Windows 11, and 64-bit, ARM64 and multi-session are separate entries. Keep it exact.
+  - Multi-session is `OperatingSystemSKU` 175. It reports `ProductType` 3 like Windows Server, so check the SKU before the product type.
+  - Architecture comes from `Win32_Processor.Architecture` (5 or 12 means Arm) plus `[Environment]::Is64BitOperatingSystem`. Never use `Win32_OperatingSystem.OSArchitecture`, which Microsoft documents as localizable.
+  - The OS test harness replaces the exact line `$is64BitOperatingSystem = [Environment]::Is64BitOperatingSystem` to simulate 32-bit Windows, and injects list overrides before the closing `# ----` divider of the configuration block. Keep both intact.
 
 For version comparisons, use the Version data type. Integer fits only the major version, or a packed encoding like Acrobat's.
 
@@ -54,6 +59,7 @@ The test harnesses live in `Tests/`, which is gitignored: it exists only on the 
 ```bash
 pwsh -NoProfile -File Tests/Invoke-RequirementTests.ps1   # file and WMI scripts
 pwsh -NoProfile -File Tests/Invoke-AcrobatTests.ps1       # Acrobat script, plus a check that the encoding keeps real versions in order
+pwsh -NoProfile -File Tests/Invoke-OperatingSystemTests.ps1   # operating system script
 pwsh -NoProfile -File Tests/Test-ScriptQuality.ps1        # lint, ASCII-only, help parses, #Requires 5.1, for every script
 ```
 
@@ -97,4 +103,4 @@ These tests run in PowerShell 7, so they can't catch behavior that differs only 
 
 - **README.md:** the Scripts table, the rule recipes, the script's own section, the Verification case counts, Repository layout, and the version badge.
 - **CHANGELOG.md:** use Keep a Changelog with SemVer, and bump the README version badge to match.
-- **Categories:** `Applications/` is the only category folder so far. The README lists operating-system requirement scripts (OS version, multi-session) as planned.
+- **Categories:** scripts are grouped in top-level folders, currently `Applications/` and `OperatingSystem/`. `Tests/Test-ScriptQuality.ps1` checks every `.ps1` outside `Tests/`, so a new folder is covered automatically.

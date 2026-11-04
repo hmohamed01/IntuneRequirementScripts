@@ -5,6 +5,15 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.4.0] - 2026-11-04
+
+### Added
+- `OperatingSystem/Get-OperatingSystemRequirement.ps1` — Win32 app requirement script that mirrors a Configuration Manager *Operating system One of* requirement rule: select any of All Windows 10 (32-bit, 64-bit, ARM64), All Windows 11 (64-bit, ARM64), and Windows 10 or Windows 11 Enterprise multi-session, and the script writes `True` when the device runs one of them, otherwise `False`; each entry matches exactly one Windows version, architecture and edition, as in Configuration Manager
+
+### Changed
+- README and every script's `.OUTPUTS` help now separate what Microsoft documents (Intune reads STDOUT when the exit code is 0) from what it doesn't (what a non-zero exit means for a requirement rule, which the scripts assume leaves the rule unmet)
+- README links to the moved *Add and assign Win32 apps to Microsoft Intune* page
+
 ## [0.3.0] - 2026-11-03
 
 ### Added

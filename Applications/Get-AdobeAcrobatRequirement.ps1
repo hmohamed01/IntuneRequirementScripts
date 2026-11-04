@@ -33,9 +33,10 @@
       Only entries without an Adobe version      (nothing)    1
       Script error, e.g. no WMI class            (nothing)    2
 
-    Intune reads STDOUT only when the exit code is 0. Any other exit code means the rule
-    isn't met, whatever the operator. Diagnostics go to STDERR, so they never reach the
-    value Intune parses.
+    Microsoft documents that Intune reads STDOUT when the exit code is 0. It doesn't
+    document what another exit code means for a requirement rule; expect the rule not to
+    be met, as with a detection script that exits non-zero. Diagnostics go to STDERR,
+    never STDOUT, and only when the exit code isn't 0.
 
     INTUNE RULE
 
@@ -48,7 +49,8 @@
       Acrobat 26.002.22031 or later   Greater than or equal to  260222031
       Older than 26.002.22031         Less than                 260222031
 
-    With no Acrobat product installed the script exits 1, so neither rule matches.
+    With no Acrobat product installed the script exits 1 with no output, so expect neither
+    rule to match.
 
     CONVERTING AN ADOBE VERSION TO THE INTUNE VALUE
 

@@ -1,17 +1,17 @@
 # IntuneRequirementScripts
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.3.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.4.0-informational.svg)](CHANGELOG.md)
 [![Build](https://img.shields.io/badge/PSScriptAnalyzer-5.1%20compatible-success.svg)](#verification)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/en-us/windows)
-[![Intune](https://img.shields.io/badge/Intune-Win32%20app%20requirements-0078D4)](https://learn.microsoft.com/en-us/intune/intune-service/apps/apps-win32-add)
+[![Intune](https://img.shields.io/badge/Intune-Win32%20app%20requirements-0078D4)](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32)
 
-PowerShell requirement scripts for Intune Win32 apps. Each script writes exactly one value to STDOUT, in a form an Intune requirement rule can parse as **Boolean**, **String**, **Integer** or **Version**, so a rule can check whether an app is installed and which version it is.
+PowerShell requirement scripts for Intune Win32 apps. Each script writes exactly one value to STDOUT, in a form an Intune requirement rule can parse as **Boolean**, **String**, **Integer** or **Version**, so a rule can check whether an app is installed, which version it is, or which operating system the device runs.
 
 ## How Intune evaluates a requirement script
 
-The Intune Management Extension runs the script on the device: as SYSTEM, in a 64-bit Windows PowerShell 5.1 process, unless the rule says otherwise. If the script **exits with code 0**, Intune reads STDOUT, parses it as the rule's **output data type**, and compares it with the rule's operator and value. With any other exit code, Intune never reads the output, so the rule isn't met.
+The Intune Management Extension runs the script on the device: as SYSTEM, in a 64-bit Windows PowerShell 5.1 process, unless the rule says otherwise. Microsoft documents that when the script **exits with code 0**, Intune reads STDOUT and compares it, as the rule's **output data type**, with the rule's operator and value. Microsoft doesn't document what any other exit code means for a requirement rule. These scripts assume the rule isn't met, which is how Microsoft documents a non-zero exit for *detection* scripts on the same page. That's why Boolean output writes `False` with exit code 0 rather than failing: it's the only way an *Equals False* rule can match.
 
 | Output data type | Operators | Used here for |
 |---|---|---|
@@ -33,6 +33,8 @@ Graph stores the value you compare against as a string, and a Boolean as `true` 
 | [`Applications/Get-AppRequirementByWmi.ps1`](Applications/Get-AppRequirementByWmi.ps1) | Display name and publisher in `Win32_InstalledWin32Program` | The version text listed in Installed apps |
 | [`Applications/Get-AdobeAcrobatRequirement.ps1`](Applications/Get-AdobeAcrobatRequirement.ps1) | Any Adobe Acrobat product in `Win32_InstalledWin32Program` | Adobe's version, packed into one integer: see [Adobe Acrobat script](#adobe-acrobat-script) |
 
+To check the operating system instead, [`OperatingSystem/Get-OperatingSystemRequirement.ps1`](OperatingSystem/Get-OperatingSystemRequirement.ps1) writes `True` or `False`, like a Configuration Manager *Operating system* requirement rule: see [Operating system script](#operating-system-script).
+
 The two general scripts follow the same output contract, set by `$OutputType` in the configuration block:
 
 | `$OutputType` | Installed | Not installed |
@@ -48,9 +50,9 @@ The two general scripts follow the same output contract, set by `$OutputType` in
 | 1 | Nothing to report: the app isn't installed, or (WMI script) no matching entry has a number in its version text |
 | 2 | Script error: invalid configuration, or the WMI class isn't available |
 
-Diagnostics go to STDERR, never STDOUT, so they can't corrupt the value Intune parses.
+Diagnostics go to STDERR, never STDOUT, so they can't corrupt the value Intune parses, and only when the script exits non-zero. Microsoft documents that any STDERR output makes a *detection* script count as not installed, even with exit code 0. It doesn't say the same for requirement scripts, but staying silent on success avoids the question.
 
-**A missing app never meets an Integer or Version rule, whatever the operator.** The script exits 1, so Intune reads no output. That keeps *Less than 24.8* aimed at devices with an old install, not at devices without the app. To target devices without the app, use Boolean *Equals False*.
+**A missing app gives an Integer or Version rule nothing to compare.** The script exits 1 and writes nothing, so, given the assumption above, the rule isn't met whatever the operator. That keeps *Less than 24.8* aimed at devices with an old install, not at devices without the app. To target devices without the app, use Boolean *Equals False*: the script exits 0 with `False`, the case Microsoft documents.
 
 ## Adding a rule in Intune
 
@@ -125,13 +127,66 @@ $v = [version]'26.002.22031'; $v.Major * 10000000 + $v.Minor * 100000 + $v.Build
 | Acrobat 26.002.22031 or later | Integer | Greater than or equal to | `260222031` |
 | Acrobat older than 26.002.22031, e.g. to target an update | Integer | Less than | `260222031` |
 
-With no Acrobat product installed, the script exits 1, so neither rule matches.
+With no Acrobat product installed, the script exits 1 and writes nothing, so expect neither rule to match. See [How Intune evaluates a requirement script](#how-intune-evaluates-a-requirement-script) for what Microsoft documents about exit codes.
 
 **Why not just remove the dots?** `2600222031` is larger than 2,147,483,647, the largest 32-bit integer, and Intune doesn't document whether Integer output is 32-bit. If it is, that number would fail to parse on every device and the rule would never match. The packed form stays below 1,000,000,000. It relies on the release being below 100, which Adobe's releases always have been; a release of 100 or more makes the script exit 2 rather than report a number that sorts wrongly.
 
 - Entries whose version isn't in Adobe's format are ignored, so an add-in listed under an Acrobat name doesn't count. If only such entries match, the script exits 1 and STDERR lists what it found.
 - Compare within one track. Inside a track, the integers sort exactly as the versions do. Across tracks they sort by year and release first.
 - To limit the rule to fewer products, narrow `$NamePattern`, e.g. `Adobe Acrobat Reader*`.
+
+## Operating system script
+
+`Get-OperatingSystemRequirement.ps1` works like a Configuration Manager requirement rule with **Device › Operating system › One of**. List the allowed operating systems in `$AllowedOperatingSystems`, using the names Configuration Manager shows under Windows 10 and Windows 11. The script writes `True` when the device runs one of them, and `False` otherwise. Commenting out a line leaves that entry unselected, like clearing its check box:
+
+```powershell
+[string[]]$AllowedOperatingSystems = @(
+    # 'All Windows 10 (32-bit)'
+    'All Windows 10 (64-bit)'
+    # 'All Windows 10 (ARM64)'
+    # 'Windows 10 Enterprise multi-session'
+    'All Windows 11 (64-bit)'
+    # 'All Windows 11 (ARM64)'
+    # 'Windows 11 Enterprise multi-session'
+)
+```
+
+| Entry | Matches devices running |
+|---|---|
+| `All Windows 10 (32-bit)` | Windows 10, 32-bit |
+| `All Windows 10 (64-bit)` | Windows 10, 64-bit (x64) |
+| `All Windows 10 (ARM64)` | Windows 10 on Arm |
+| `Windows 10 Enterprise multi-session` | Windows 10 Enterprise multi-session |
+| `All Windows 11 (64-bit)` | Windows 11, 64-bit (x64) |
+| `All Windows 11 (ARM64)` | Windows 11 on Arm |
+| `Windows 11 Enterprise multi-session` | Windows 11 Enterprise multi-session |
+
+| Requirement | Output data type | Operator | Value |
+|---|---|---|---|
+| Device runs one of the selected operating systems (Configuration Manager *One of*) | Boolean | Equals | True |
+| Device runs none of them (Configuration Manager *None of*) | Boolean | Equals | False |
+
+The script always exits 0 with `True` or `False`, except on a script error (exit 2), such as a misspelled entry or an empty list.
+
+**Each entry covers exactly one Windows version, architecture and edition**, as in Configuration Manager:
+
+- **Multi-session and Arm need their own entries.** Microsoft documents that selecting the Windows 10 platform doesn't add Windows 10 Enterprise multi-session, which you select separately, and that apps limited to the other Windows 10 entries don't reach Windows 10 ARM64 devices until **All Windows 10 (ARM64)** is selected.
+- **Windows 10 entries don't match Windows 11.** Microsoft doesn't state this outright, but a published migration report shows apps limited to Windows 10 not deploying to Windows 11 devices. To allow both, select both.
+- **Windows Server, and Windows before Windows 10, never match.** There are no entries for them.
+
+How the script identifies the device, with `Get-CimInstance` in `root\cimv2` and no Windows Installer classes:
+
+| Property | Meaning |
+|---|---|
+| `Win32_OperatingSystem.Version` 10.0 | Windows 10 or 11: build 22000 or later is Windows 11 |
+| `Win32_OperatingSystem.OperatingSystemSKU` 175 | Windows Enterprise multi-session (Enterprise for Virtual Desktops) |
+| `Win32_OperatingSystem.ProductType` 1 | Any other Windows client. Multi-session reports 3, like Windows Server, so the SKU is checked first |
+| `Win32_Processor.Architecture` 12 (ARM64) or 5 (ARM) | Arm, where Windows 10 and 11 are 64-bit only |
+| `[Environment]::Is64BitOperatingSystem` | 64-bit or 32-bit Windows on Intel and AMD processors, also from a 32-bit process |
+
+`Win32_OperatingSystem.OSArchitecture` would be simpler, but Microsoft documents it as localizable, so the script doesn't use it. Unlike the WMI app scripts, this script also runs on Windows Server, where it reports `False`.
+
+The entry names follow Microsoft's documentation and a published console example. Your console may word an entry slightly differently; only the names in the script's list are accepted.
 
 ## Testing on a device
 
@@ -159,25 +214,26 @@ On a managed device, the Intune Management Extension logs are in `C:\ProgramData
 - **PSScriptAnalyzer 1.25**: default rules, plus the compatibility rules for Windows PowerShell 5.1 (Windows 10 1607 and 1809, Windows Server 2019 profiles). No findings.
 - **WMI class audit**: every WMI call in the repository is `Get-CimInstance` on `Win32_InstalledWin32Program`. No script uses a Windows Installer provider class.
 - **13 Acrobat cases**, covering both tracks, unpadded and four-part versions, several products installed together, add-ins, a wrong publisher, a release of 100, and a missing WMI class. Plus a check that the integer keeps eight real versions from Adobe's release notes in order.
+- **31 operating system cases**, covering every entry, both Windows 10 and 11 boundaries (builds 21996 and 22000), 32-bit Windows on a 64-bit processor, Arm reported as ARM or ARM64, multi-session against 64-bit entries, Windows Server, domain controllers, Windows 8.1, misspelled entries and an empty list.
 - **25 behavior cases** run in PowerShell 7.6, covering every `$OutputType`, missing and present apps, several matching entries (highest version wins, compared as numbers, unreadable entries skipped), configuration errors and a missing WMI class. `Get-CimInstance` was stubbed, because the test machine has no WMI. Not yet run on a Windows device.
 
 ## Repository layout
 
 ```
 IntuneRequirementScripts/
-└── Applications/
-    ├── Get-AdobeAcrobatRequirement.ps1   Adobe Acrobat version as one integer
-    ├── Get-AppRequirementByFile.ps1      App present / version, by file
-    └── Get-AppRequirementByWmi.ps1       App present / version, by Win32_InstalledWin32Program
+├── Applications/
+│   ├── Get-AdobeAcrobatRequirement.ps1      Adobe Acrobat version as one integer
+│   ├── Get-AppRequirementByFile.ps1         App present / version, by file
+│   └── Get-AppRequirementByWmi.ps1          App present / version, by Win32_InstalledWin32Program
+└── OperatingSystem/
+    └── Get-OperatingSystemRequirement.ps1   Device runs one of the selected operating systems
 ```
-
-Planned: requirement scripts for the operating system, such as OS version and multi-session.
 
 ## Sources
 
 Checked on November 3, 2026:
 
-- [Add, assign, and monitor a Win32 app in Microsoft Intune](https://learn.microsoft.com/en-us/intune/intune-service/apps/apps-win32-add) — requirement rule settings; STDOUT is evaluated when the exit code is 0
+- [Add and assign Win32 apps to Microsoft Intune](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32) — requirement rule settings; STDOUT is read when the exit code is 0 (the page doesn't say what another exit code means for a requirement rule); for detection scripts, a non-zero exit or any STDERR output means not installed
 - [win32LobAppPowerShellScriptRequirement](https://learn.microsoft.com/en-us/graph/api/resources/intune-apps-win32lobapppowershellscriptrequirement?view=graph-rest-1.0), [detection type](https://learn.microsoft.com/en-us/graph/api/resources/intune-apps-win32lobapppowershellscriptdetectiontype?view=graph-rest-1.0) and [operator](https://learn.microsoft.com/en-us/graph/api/resources/intune-apps-win32lobappdetectionoperator?view=graph-rest-1.0) — output data types and operators
 - [IntuneWin32App `New-IntuneWin32AppRequirementRuleScript`](https://www.powershellgallery.com/packages/IntuneWin32App/1.5.0/Content/Public%5CNew-IntuneWin32AppRequirementRuleScript.ps1) — operators allowed per type; Boolean stored as `true`/`false`
 - [Troubleshoot Win32 app issues](https://learn.microsoft.com/en-us/intune/intune-service/apps/apps-win32-troubleshoot) — log locations
@@ -185,6 +241,14 @@ Checked on November 3, 2026:
 - [Windows Installer reconfigured all installed applications (KB 974524)](https://learn.microsoft.com/en-us/troubleshoot/windows-server/admin-development/windows-installer-reconfigured-all-applications)
 - [WOW64 implementation details](https://learn.microsoft.com/en-us/windows/win32/winprog64/wow64-implementation-details) — environment variables in 32-bit and 64-bit processes
 - [Adobe Acrobat release notes](https://www.adobe.com/devnet-docs/acrobatetk/tools/ReleaseNotesDC/index.html) — current version numbers for each track
+- [Supported clients and devices for Configuration Manager](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/supported-operating-systems-for-clients-and-devices) — Windows 10 and Windows 11 Enterprise multi-session platforms, selected separately from their parent platform
+- [Support for Windows 11 in Configuration Manager](https://learn.microsoft.com/en-us/intune/configmgr/core/plan-design/configs/support-for-windows-11) — build 22000 or later is Windows 11; the All Windows 11 (ARM64) platform
+- [Applications aren't deployed to Windows 10 ARM64 devices](https://support.microsoft.com/help/4338726) — All Windows 10 (ARM64) must be selected explicitly
+- [`New-CMRequirementRuleOperatingSystemValue`](https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmrequirementruleoperatingsystemvalue?view=sccm-ps) — *One of* / *None of* operating system rules and platform names
+- [Windows 11 operating system requirement in Configuration Manager (Alkane Solutions)](https://www.alkanesolutions.co.uk/2025/03/14/windows-11-operating-system-requirement-in-configuration-manager/) — console names such as *All Windows 10 (64-bit)*; apps limited to Windows 10 not deploying to Windows 11
+- [Windows Enterprise multi-session FAQ](https://learn.microsoft.com/en-us/azure/virtual-desktop/windows-multisession-faq) — multi-session reports ProductType 3, like Windows Server
+- [Configure automatic updates for Azure Virtual Desktop session hosts](https://learn.microsoft.com/en-us/azure/virtual-desktop/configure-automatic-updates) — OperatingSystemSKU 175 for Windows 10 and 11 Enterprise multi-session
+- [Win32_OperatingSystem](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-operatingsystem) and [Win32_Processor](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-processor) — ProductType, OperatingSystemSKU, localizable OSArchitecture, and processor Architecture values
 - [Document Cloud tracks explained: Continuous vs Classic](https://community.adobe.com/t5/acrobat-reader-discussions/document-cloud-tracks-explained-quot-continuous-quot-vs-quot-classic-quot/td-p/7226460) — the track digit in the build number
 
 ## License

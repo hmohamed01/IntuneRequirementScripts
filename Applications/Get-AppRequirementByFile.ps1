@@ -25,9 +25,11 @@
 
     Integer is the file's major version. Version always has four parts.
 
-    Intune reads STDOUT only when the exit code is 0, then parses it as the output data
-    type selected on the rule. Any other exit code means the rule isn't met, whatever the
-    operator. Diagnostics go to STDERR, so they never reach the value Intune parses.
+    Microsoft documents that Intune reads STDOUT when the exit code is 0, as the output
+    data type selected on the rule. It doesn't document what another exit code means for
+    a requirement rule; expect the rule not to be met, as with a detection script that
+    exits non-zero. Diagnostics go to STDERR, never STDOUT, and only when the exit code
+    isn't 0.
 
       Exit code  Meaning
       ---------  ----------------------------------------------------------
@@ -47,8 +49,9 @@
       Major version 24 or later   Integer           Greater than or equal to  24
 
     Enter Version values with all four parts, as the script writes them: 24.8.0.0, not 24.8.
-    A missing app never meets an Integer or Version rule, so "Less than" targets old
-    installs only. To target devices without the app, use Boolean, Equals, False.
+    A missing app exits 1 with no output, so expect it not to meet an Integer or Version
+    rule: "Less than" targets old installs only. To target devices without the app, use
+    Boolean, Equals, False, which exits 0 as Microsoft documents.
 
 .NOTES
     Intune rule settings:
