@@ -39,9 +39,7 @@ Never query `Win32_Product`, or any other class served by the MSI WMI provider (
 - **`Get-AppRequirementByFile.ps1` and `Get-AppRequirementByWmi.ps1`** are generic templates. Users copy one, edit its Configuration block, and set `$OutputType` (Boolean, String, Integer for the major version, or Version) to match the rule's data type.
   - File versions always have four parts (`24.8.0.0`).
   - WMI `Version` is free text, normalized by `ConvertTo-ComparableVersion`.
-- **`Select-ReportedProgram`** in the WMI script is a deliberate `TODO` that the user is implementing themselves: it picks which entry's version is reported when several match. Don't implement it unless asked. Until it exists:
-  - Integer and Version output exit 2, including the shipped default `$OutputType = 'Version'`.
-  - PSScriptAnalyzer reports `PSReviewUnusedParameter` for it.
+- **`Select-ReportedProgram`** in the WMI script picks whose version is reported when several entries match. It reports the highest readable version, the same rule the Acrobat script uses, so *Greater than or equal to* means at least one install meets the bar. If this rule changes, change it in both scripts.
 - **`Get-AdobeAcrobatRequirement.ps1`** is app-specific and always outputs an Integer: the highest installed Acrobat or Reader version, packed as `year*10000000 + release*100000 + build` (26.002.22031 → 260222031).
   - Not removing the dots: that would exceed Int32, and Intune doesn't document the width of its Integer type.
   - Only builds matching `[23]\d{4}` count (2 = Continuous track, 3 = Classic).
@@ -53,7 +51,7 @@ For version comparisons, use the Version data type. Integer fits only the major 
 
 There's no test suite in the repo. These are the checks used so far.
 
-**Lint.** This runs the default rules plus the Windows PowerShell 5.1 compatibility rules in one pass; a `-Settings` hashtable with only `Rules` keeps the default rule set. The only expected finding is the `Select-ReportedProgram` one above.
+**Lint.** This runs the default rules plus the Windows PowerShell 5.1 compatibility rules in one pass; a `-Settings` hashtable with only `Rules` keeps the default rule set. Expect no findings.
 
 ```bash
 pwsh -NoProfile -Command '
@@ -90,5 +88,5 @@ These tests run in PowerShell 7, so they can't catch behavior that differs only 
 ## When adding or changing a script
 
 - **README.md:** the Scripts table, the rule recipes, the script's own section, the Verification case counts, Repository layout, and the version badge.
-- **CHANGELOG.md:** use Keep a Changelog with SemVer (currently 0.2.0).
+- **CHANGELOG.md:** use Keep a Changelog with SemVer, and bump the README version badge to match.
 - **Categories:** `Applications/` is the only category folder so far. The README lists operating-system requirement scripts (OS version, multi-session) as planned.

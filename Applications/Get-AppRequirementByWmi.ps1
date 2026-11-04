@@ -33,8 +33,8 @@
 
     Version is the version text from Installed apps, cleaned up: the leading number is
     kept ('24.08' -> 24.8, '1.2.3 build 7' -> 1.2.3) and a one-part version is padded
-    ('5' -> 5.0). Integer is its first part. Integer and Version need Select-ReportedProgram
-    implemented; until then they exit 2.
+    ('5' -> 5.0). Integer is its first part. When several entries match, such as x86 and
+    x64 builds, the highest readable version is reported.
 
     Intune reads STDOUT only when the exit code is 0, then parses it as the output data
     type selected on the rule. Any other exit code means the rule isn't met, whatever the
@@ -44,7 +44,7 @@
       ---------  ---------------------------------------------------------------
       0          One line written to STDOUT
       1          Nothing to report (Integer, Version): the app isn't installed,
-                 or its version text has no number in it
+                 or no matching entry has a number in its version text
       2          Script error, e.g. an invalid Configuration value or no WMI class
 
     INTUNE RULE EXAMPLES
@@ -112,14 +112,25 @@ function ConvertTo-ComparableVersion {
 
 function Select-ReportedProgram {
     # Several entries can match one pattern: x86 and x64 builds side by side, or two
-    # versions of a runtime. Return the single entry whose version the script reports.
-    # $Programs holds Win32_InstalledWin32Program instances (Name, Vendor, Version text).
-    # Use ConvertTo-ComparableVersion to compare versions; it returns $null for text it
-    # can't parse.
+    # versions of a runtime. Report the highest readable version, as the Acrobat script
+    # does: "Greater than or equal to" is met when at least one install meets it, and
+    # "Less than" only when every readable install is older. When no entry has a
+    # readable version, return the first one so the caller exits 1.
     param([object[]]$Programs)
 
-    # TODO: return one entry from $Programs.
-    throw 'Select-ReportedProgram is not implemented yet.'
+    $parsedPrograms = foreach ($program in $Programs) {
+        [pscustomobject]@{
+            Program = $program
+            Version = ConvertTo-ComparableVersion -VersionText $program.Version
+        }
+    }
+    $highestProgram = $parsedPrograms |
+        Where-Object { $null -ne $_.Version } |
+        Sort-Object -Property Version -Descending |
+        Select-Object -First 1
+
+    if ($null -eq $highestProgram) { return $Programs[0] }
+    return $highestProgram.Program
 }
 
 $matchingPrograms = @(

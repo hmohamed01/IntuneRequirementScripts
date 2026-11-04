@@ -1,7 +1,7 @@
 # IntuneRequirementScripts
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.2.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.3.0-informational.svg)](CHANGELOG.md)
 [![Build](https://img.shields.io/badge/PSScriptAnalyzer-5.1%20compatible-success.svg)](#verification)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/en-us/windows)
@@ -45,7 +45,7 @@ The two general scripts follow the same output contract, set by `$OutputType` in
 | Exit code | Meaning |
 |---|---|
 | 0 | A value was written to STDOUT |
-| 1 | Nothing to report: the app isn't installed, or (WMI script) its version text has no number in it |
+| 1 | Nothing to report: the app isn't installed, or (WMI script) no matching entry has a number in its version text |
 | 2 | Script error: invalid configuration, or the WMI class isn't available |
 
 Diagnostics go to STDERR, never STDOUT, so they can't corrupt the value Intune parses.
@@ -96,7 +96,7 @@ The version is the four-part numeric file version, so `Version` output always ha
 
 - `$NamePattern` matches the display name shown in **Settings › Apps › Installed apps**, using `-like` wildcards. Make it specific, e.g. `Java 8 Update*` rather than `Java*`, so companion entries such as updaters don't match.
 - `Version` is free text. The script keeps the leading number (`24.08` → `24.8`, `1.2.3 build 7` → `1.2.3`), pads a one-part version (`5` → `5.0`), and exits 1 if there's no number at all. Enter the Intune value in the same form, e.g. `24.8`.
-- Several entries can match one pattern, such as x86 and x64 builds side by side. `Select-ReportedProgram` decides whose version is reported.
+- Several entries can match one pattern, such as x86 and x64 builds side by side. The script reports the highest readable version, as the Acrobat script does, so *Greater than or equal to* is met when at least one install meets it, and *Less than* only when every readable install is older. Entries whose version text has no number are skipped.
 - The script runs as SYSTEM. If an app installs per user, test whether the class lists it before relying on the rule.
 
 ## Adobe Acrobat script
@@ -156,10 +156,10 @@ On a managed device, the Intune Management Extension logs are in `C:\ProgramData
 
 ## Verification
 
-- **PSScriptAnalyzer 1.25**: default rules, plus the compatibility rules for Windows PowerShell 5.1 (Windows 10 1607 and 1809, Windows Server 2019 profiles). No findings, apart from `Select-ReportedProgram`'s unused parameter until it's implemented.
+- **PSScriptAnalyzer 1.25**: default rules, plus the compatibility rules for Windows PowerShell 5.1 (Windows 10 1607 and 1809, Windows Server 2019 profiles). No findings.
 - **WMI class audit**: every WMI call in the repository is `Get-CimInstance` on `Win32_InstalledWin32Program`. No script uses a Windows Installer provider class.
 - **13 Acrobat cases**, covering both tracks, unpadded and four-part versions, several products installed together, add-ins, a wrong publisher, a release of 100, and a missing WMI class. Plus a check that the integer keeps eight real versions from Adobe's release notes in order.
-- **22 behavior cases** run in PowerShell 7.6, covering every `$OutputType`, missing and present apps, configuration errors and a missing WMI class. `Get-CimInstance` was stubbed, because the test machine has no WMI. Not yet run on a Windows device.
+- **25 behavior cases** run in PowerShell 7.6, covering every `$OutputType`, missing and present apps, several matching entries (highest version wins, compared as numbers, unreadable entries skipped), configuration errors and a missing WMI class. `Get-CimInstance` was stubbed, because the test machine has no WMI. Not yet run on a Windows device.
 
 ## Repository layout
 
