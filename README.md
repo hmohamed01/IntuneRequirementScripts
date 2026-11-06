@@ -9,9 +9,18 @@
 
 PowerShell requirement scripts for Intune Win32 apps. Each script writes exactly one value to STDOUT, in a form an Intune requirement rule can parse as **Boolean**, **String**, **Integer** or **Version**, so a rule can check whether an app is installed, which version it is, or which operating system the device runs.
 
+| Script | Checks |
+|---|---|
+| [`Applications/Get-AppRequirementByFile.ps1`](Applications/Get-AppRequirementByFile.ps1) | Whether an app is installed, or its version, by a file path |
+| [`Applications/Get-AppRequirementByWmi.ps1`](Applications/Get-AppRequirementByWmi.ps1) | Whether an app is installed, or its version, by its entry in Installed apps |
+| [`Applications/Get-AdobeAcrobatRequirement.ps1`](Applications/Get-AdobeAcrobatRequirement.ps1) | The installed Adobe Acrobat version, as one integer |
+| [`OperatingSystem/Get-OperatingSystemRequirement.ps1`](OperatingSystem/Get-OperatingSystemRequirement.ps1) | Whether the device runs one of the selected operating systems |
+
 ## How Intune evaluates a requirement script
 
 The Intune Management Extension runs the script on the device: as SYSTEM, in a 64-bit Windows PowerShell 5.1 process, unless the rule says otherwise. Microsoft documents that when the script **exits with code 0**, Intune reads STDOUT and compares it, as the rule's **output data type**, with the rule's operator and value. Microsoft doesn't document what any other exit code means for a requirement rule. These scripts assume the rule isn't met, which is how Microsoft documents a non-zero exit for *detection* scripts on the same page. That's why Boolean output writes `False` with exit code 0 rather than failing: it's the only way an *Equals False* rule can match.
+
+Every script writes diagnostics to STDERR, never STDOUT, so they can't corrupt the value Intune parses, and only when it exits non-zero. Microsoft documents that any STDERR output makes a *detection* script count as not installed, even with exit code 0. It doesn't say the same for requirement scripts, but staying silent on success avoids the question.
 
 | Output data type | Operators | Used here for |
 |---|---|---|
@@ -25,17 +34,28 @@ Graph stores the value you compare against as a string, and a Boolean as `true` 
 
 > **Use Version, not Integer, for version checks.** An Integer holds one whole number, so it can't represent `24.08` or `124.0.6367.91`. Integer is useful when only the major version matters.
 
-## Scripts
+## Adding a rule in Intune
+
+1. Copy the script and give the copy a name that identifies the app and check, e.g. `Req-7Zip-Version.ps1`.
+2. Edit its configuration block: the file path or name pattern and `$OutputType` for an application script, or `$AllowedOperatingSystems` for the operating system script.
+3. In the app's **Requirements** page, under **Configure additional requirement rules**, select **Add**, set **Requirement type** to **Script**, and upload the copy.
+4. Set the rule:
+   - **Run script as 32-bit process on 64-bit clients**: No
+   - **Run this script using the logged on credentials**: No
+   - **Enforce script signature check**: No, unless you sign the script
+   - **Select output data type**: the type the script writes, then the operator and value. The script's section below gives them for common requirements, and its `.OUTPUTS` help section repeats them, so the guidance travels with the script.
+
+## Application scripts
 
 | Script | Detects the app by | Version comes from |
 |---|---|---|
-| [`Applications/Get-AppRequirementByFile.ps1`](Applications/Get-AppRequirementByFile.ps1) | A file path | The file's version resource |
-| [`Applications/Get-AppRequirementByWmi.ps1`](Applications/Get-AppRequirementByWmi.ps1) | Display name and publisher in `Win32_InstalledWin32Program` | The version text listed in Installed apps |
-| [`Applications/Get-AdobeAcrobatRequirement.ps1`](Applications/Get-AdobeAcrobatRequirement.ps1) | Any Adobe Acrobat product in `Win32_InstalledWin32Program` | Adobe's version, packed into one integer: see [Adobe Acrobat script](#adobe-acrobat-script) |
+| [`Get-AppRequirementByFile.ps1`](Applications/Get-AppRequirementByFile.ps1) | A file path | The file's version resource |
+| [`Get-AppRequirementByWmi.ps1`](Applications/Get-AppRequirementByWmi.ps1) | Display name and publisher in `Win32_InstalledWin32Program` | The version text listed in Installed apps |
+| [`Get-AdobeAcrobatRequirement.ps1`](Applications/Get-AdobeAcrobatRequirement.ps1) | Any Adobe Acrobat product in `Win32_InstalledWin32Program` | Adobe's version, packed into one integer: see [Adobe Acrobat script](#adobe-acrobat-script) |
 
-To check the operating system instead, [`OperatingSystem/Get-OperatingSystemRequirement.ps1`](OperatingSystem/Get-OperatingSystemRequirement.ps1) writes `True` or `False`, like a Configuration Manager *Operating system* requirement rule: see [Operating system script](#operating-system-script).
+### Output and exit codes
 
-The two general scripts follow the same output contract, set by `$OutputType` in the configuration block:
+The file and WMI scripts write the type set by `$OutputType` in the configuration block. The Acrobat script always writes an Integer.
 
 | `$OutputType` | Installed | Not installed |
 |---|---|---|
@@ -50,20 +70,11 @@ The two general scripts follow the same output contract, set by `$OutputType` in
 | 1 | Nothing to report: the app isn't installed, or (WMI script) no matching entry has a number in its version text |
 | 2 | Script error: invalid configuration, or the WMI class isn't available |
 
-Diagnostics go to STDERR, never STDOUT, so they can't corrupt the value Intune parses, and only when the script exits non-zero. Microsoft documents that any STDERR output makes a *detection* script count as not installed, even with exit code 0. It doesn't say the same for requirement scripts, but staying silent on success avoids the question.
+**A missing app gives an Integer or Version rule nothing to compare.** The script exits 1 and writes nothing, so, given the assumption under [How Intune evaluates a requirement script](#how-intune-evaluates-a-requirement-script), the rule isn't met whatever the operator. That keeps *Less than 24.8* aimed at devices with an old install, not at devices without the app. To target devices without the app, use Boolean *Equals False*: the script exits 0 with `False`, the case Microsoft documents.
 
-**A missing app gives an Integer or Version rule nothing to compare.** The script exits 1 and writes nothing, so, given the assumption above, the rule isn't met whatever the operator. That keeps *Less than 24.8* aimed at devices with an old install, not at devices without the app. To target devices without the app, use Boolean *Equals False*: the script exits 0 with `False`, the case Microsoft documents.
+### Example rules
 
-## Adding a rule in Intune
-
-1. Copy the script and give the copy a name that identifies the app and check, e.g. `Req-7Zip-Version.ps1`.
-2. Edit its configuration block: the file path or name pattern, and `$OutputType`.
-3. In the app's **Requirements** page, under **Configure additional requirement rules**, select **Add**, set **Requirement type** to **Script**, and upload the copy.
-4. Set the rule:
-   - **Run script as 32-bit process on 64-bit clients**: No
-   - **Run this script using the logged on credentials**: No
-   - **Enforce script signature check**: No, unless you sign the script
-   - **Select output data type**: the type that matches `$OutputType`, then the operator and value from the table below
+For the file and WMI scripts:
 
 | Requirement | `$OutputType` | Output data type | Operator | Value |
 |---|---|---|---|---|
@@ -74,9 +85,9 @@ Diagnostics go to STDERR, never STDOUT, so they can't corrupt the value Intune p
 | Older than 24.8, e.g. to target an upgrade | `Version` | Version | Less than | `24.8` |
 | Major version 24 or later | `Integer` | Integer | Greater than or equal to | `24` |
 
-Enter a Version value with as many parts as the script writes. The file script always writes four (`24.8.0.0`). The WMI script writes the version as Installed apps shows it (`24.8`), so run it once on a device to see the exact form. Each script's `.OUTPUTS` help section repeats these tables, so the guidance travels with the script.
+Enter a Version value with as many parts as the script writes. The file script always writes four (`24.8.0.0`). The WMI script writes the version as Installed apps shows it (`24.8`), so run it once on a device to see the exact form.
 
-## File script: paths and 32-bit processes
+### File script: paths and 32-bit processes
 
 `$FilePath` expands environment variables, and a 32-bit process on 64-bit Windows sees different values for some of them:
 
@@ -90,7 +101,7 @@ Use `%ProgramW6432%` for a 64-bit app and `%ProgramFiles(x86)%` for a 32-bit app
 
 The version is the four-part numeric file version, so `Version` output always has four parts, e.g. `24.8.0.0`. A file without a version resource reports `0.0.0.0`.
 
-## WMI script: why `Win32_InstalledWin32Program`
+### WMI script: why `Win32_InstalledWin32Program`
 
 **No Windows Installer provider classes.** A `Win32_Product` query makes WMI use the Windows Installer (MSI) provider to enumerate every installed product, and that starts a consistency check: Windows Installer reconfigures each product and logs Event ID 1035 for each one (KB 974524). A requirement rule runs on every device the app targets, every time it's evaluated. The same provider (`Msi.mof`, `Msiprov.dll`) also serves `Win32_SoftwareFeature`, `Win32_SoftwareElement`, `Win32_InstalledSoftwareElement`, `Win32_ProductSoftwareFeatures`, `Win32_Property`, `Win32_Patch`, `Win32_PatchPackage` and dozens more. Keep every class from that provider out of these scripts.
 
@@ -101,9 +112,9 @@ The version is the four-part numeric file version, so `Version` output always ha
 - Several entries can match one pattern, such as x86 and x64 builds side by side. The script reports the highest readable version, as the Acrobat script does, so *Greater than or equal to* is met when at least one install meets it, and *Less than* only when every readable install is older. Entries whose version text has no number are skipped.
 - The script runs as SYSTEM. If an app installs per user, test whether the class lists it before relying on the rule.
 
-## Adobe Acrobat script
+### Adobe Acrobat script
 
-`Get-AdobeAcrobatRequirement.ps1` reports the installed Acrobat version as one **Integer**, for a rule such as *Integer, Greater than or equal to, 260222031*. It considers every product whose name starts with *Adobe Acrobat* from a publisher starting with *Adobe*: Acrobat and Acrobat Reader, Continuous and Classic tracks, 32-bit and 64-bit. When several are installed, it reports the highest version. It uses `Win32_InstalledWin32Program` like the general WMI script, so the same Windows Installer and Windows Server notes apply.
+`Get-AdobeAcrobatRequirement.ps1` reports the installed Acrobat version as one **Integer**, for a rule such as *Integer, Greater than or equal to, 260222031*. It considers every product whose name starts with *Adobe Acrobat* from a publisher starting with *Adobe*: Acrobat and Acrobat Reader, Continuous and Classic tracks, 32-bit and 64-bit. When several are installed, it reports the highest version. It uses `Win32_InstalledWin32Program` like the WMI script, so the same Windows Installer and Windows Server notes apply.
 
 Adobe versions are *year.release.build*, and the five-digit build starts with the track: 2 for Continuous, 3 for Classic. The script packs the three parts into one integer:
 
@@ -184,7 +195,7 @@ How the script identifies the device, with `Get-CimInstance` in `root\cimv2` and
 | `Win32_Processor.Architecture` 12 (ARM64) or 5 (ARM) | Arm, where Windows 10 and 11 are 64-bit only |
 | `[Environment]::Is64BitOperatingSystem` | 64-bit or 32-bit Windows on Intel and AMD processors, also from a 32-bit process |
 
-`Win32_OperatingSystem.OSArchitecture` would be simpler, but Microsoft documents it as localizable, so the script doesn't use it. Unlike the WMI app scripts, this script also runs on Windows Server, where it reports `False`.
+`Win32_OperatingSystem.OSArchitecture` would be simpler, but Microsoft documents it as localizable, so the script doesn't use it. Unlike the WMI-based application scripts, this script also runs on Windows Server, where it reports `False`.
 
 The entry names follow Microsoft's documentation and a published console example. Your console may word an entry slightly differently; only the names in the script's list are accepted.
 
@@ -212,10 +223,12 @@ On a managed device, the Intune Management Extension logs are in `C:\ProgramData
 ## Verification
 
 - **PSScriptAnalyzer 1.25**: default rules, plus the compatibility rules for Windows PowerShell 5.1 (Windows 10 1607 and 1809, Windows Server 2019 profiles). No findings.
-- **WMI class audit**: every WMI call in the repository is `Get-CimInstance` on `Win32_InstalledWin32Program`. No script uses a Windows Installer provider class.
+- **WMI class audit**: every WMI call in the repository is `Get-CimInstance` on `Win32_InstalledWin32Program`, `Win32_OperatingSystem` or `Win32_Processor`. No script uses a Windows Installer provider class.
+- **25 file and WMI script cases**, covering every `$OutputType`, missing and present apps, several matching entries (highest version wins, compared as numbers, unreadable entries skipped), configuration errors and a missing WMI class.
 - **13 Acrobat cases**, covering both tracks, unpadded and four-part versions, several products installed together, add-ins, a wrong publisher, a release of 100, and a missing WMI class. Plus a check that the integer keeps eight real versions from Adobe's release notes in order.
 - **31 operating system cases**, covering every entry, both Windows 10 and 11 boundaries (builds 21996 and 22000), 32-bit Windows on a 64-bit processor, Arm reported as ARM or ARM64, multi-session against 64-bit entries, Windows Server, domain controllers, Windows 8.1, misspelled entries and an empty list.
-- **25 behavior cases** run in PowerShell 7.6, covering every `$OutputType`, missing and present apps, several matching entries (highest version wins, compared as numbers, unreadable entries skipped), configuration errors and a missing WMI class. `Get-CimInstance` was stubbed, because the test machine has no WMI. Not yet run on a Windows device.
+
+The cases run in PowerShell 7.6 with `Get-CimInstance` stubbed, because the test machine has no WMI. No script has run on a Windows device yet.
 
 ## Repository layout
 

@@ -5,6 +5,14 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+- README: an overview table near the top lists all four scripts; the file, WMI and Acrobat sections are grouped under *Application scripts*, alongside *Operating system script*; the steps for adding a rule in Intune now cover the operating system script too
+
+### Fixed
+- README: the WMI class audit under Verification now includes `Win32_OperatingSystem` and `Win32_Processor`, which the operating system script queries
+
 ## [0.4.0] - 2026-11-04
 
 ### Added
