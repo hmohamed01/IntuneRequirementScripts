@@ -49,6 +49,10 @@ Never query `Win32_Product`, or any other class served by the MSI WMI provider (
   - Multi-session is `OperatingSystemSKU` 175. It reports `ProductType` 3 like Windows Server, so check the SKU before the product type.
   - Architecture comes from `Win32_Processor.Architecture` (5 or 12 means Arm) plus `[Environment]::Is64BitOperatingSystem`. Never use `Win32_OperatingSystem.OSArchitecture`, which Microsoft documents as localizable.
   - The OS test harness replaces the exact line `$is64BitOperatingSystem = [Environment]::Is64BitOperatingSystem` to simulate 32-bit Windows, and injects list overrides before the closing `# ----` divider of the configuration block. Keep both intact.
+- **`Hardware/Get-ComputerModelRequirement.ps1`** works like a Configuration Manager collection query on `SMS_G_System_COMPUTER_SYSTEM.Model`, and the output is always Boolean.
+  - The model is `Win32_ComputerSystem.Model`, trimmed. An empty model throws (exit 2), so neither Equals True nor Equals False matches. Don't write `False` for it: a *None of* rule would then match hardware the script couldn't identify.
+  - Matching is exact and case-insensitive: `$AllowedModels -contains $computerModel`, like WQL `Model = '...'`. Wildcards were rejected as too unpredictable, so don't switch to `-like`, `-match` or substring matching; `*` and `?` in an entry stay literal.
+  - `$AllowedModels` has one quoted entry per line, with no commas, so any line can be commented out. The model test harness comments out the shipped entries by their exact lines and injects list overrides before the closing `# ----` divider; keep both intact.
 
 For version comparisons, use the Version data type. Integer fits only the major version, or a packed encoding like Acrobat's.
 
@@ -60,6 +64,7 @@ The test harnesses live in `Tests/`, which is gitignored: it exists only on the 
 pwsh -NoProfile -File Tests/Invoke-RequirementTests.ps1   # file and WMI scripts
 pwsh -NoProfile -File Tests/Invoke-AcrobatTests.ps1       # Acrobat script, plus a check that the encoding keeps real versions in order
 pwsh -NoProfile -File Tests/Invoke-OperatingSystemTests.ps1   # operating system script
+pwsh -NoProfile -File Tests/Invoke-ComputerModelTests.ps1     # computer model script
 pwsh -NoProfile -File Tests/Test-ScriptQuality.ps1        # lint, ASCII-only, help parses, #Requires 5.1, for every script
 ```
 
@@ -103,4 +108,4 @@ These tests run in PowerShell 7, so they can't catch behavior that differs only 
 
 - **README.md:** the Scripts table, the rule recipes, the script's own section, the Verification case counts, Repository layout, and the version badge.
 - **CHANGELOG.md:** use Keep a Changelog with SemVer, and bump the README version badge to match.
-- **Categories:** scripts are grouped in top-level folders, currently `Applications/` and `OperatingSystem/`. `Tests/Test-ScriptQuality.ps1` checks every `.ps1` outside `Tests/`, so a new folder is covered automatically.
+- **Categories:** scripts are grouped in top-level folders, currently `Applications/`, `Hardware/` and `OperatingSystem/`. `Tests/Test-ScriptQuality.ps1` checks every `.ps1` outside `Tests/`, so a new folder is covered automatically.

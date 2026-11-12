@@ -5,10 +5,13 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [0.5.0] - 2026-11-12
+
+### Added
+- `Hardware/Get-ComputerModelRequirement.ps1` — Win32 app requirement script that works like a Configuration Manager collection query on `SMS_G_System_COMPUTER_SYSTEM.Model`: list the allowed models, and the script writes `True` when the device's `Win32_ComputerSystem.Model` is one of them, otherwise `False`, for any manufacturer; entries match the whole model exactly, ignoring case, with no wildcards; an empty model exits 2, so neither an Equals True nor an Equals False rule matches a device it can't identify
 
 ### Changed
-- README: an overview table near the top lists all four scripts; the file, WMI and Acrobat sections are grouped under *Application scripts*, alongside *Operating system script*; the steps for adding a rule in Intune now cover the operating system script too
+- README: an overview table near the top lists every script; the file, WMI and Acrobat sections are grouped under *Application scripts*, alongside *Operating system script* and *Computer model script*; the steps for adding a rule in Intune now cover the operating system and computer model scripts too
 
 ### Fixed
 - README: the WMI class audit under Verification now includes `Win32_OperatingSystem` and `Win32_Processor`, which the operating system script queries
