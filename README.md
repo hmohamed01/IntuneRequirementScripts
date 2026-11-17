@@ -1,13 +1,15 @@
 # IntuneRequirementScripts
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-0.5.0-informational.svg)](CHANGELOG.md)
+[![Version](https://img.shields.io/badge/version-0.6.0-informational.svg)](CHANGELOG.md)
 [![Build](https://img.shields.io/badge/PSScriptAnalyzer-5.1%20compatible-success.svg)](#verification)
 [![PowerShell](https://img.shields.io/badge/PowerShell-5.1-5391FE?logo=powershell&logoColor=white)](https://learn.microsoft.com/en-us/powershell/)
 [![Platform](https://img.shields.io/badge/platform-Windows-0078D6?logo=windows&logoColor=white)](https://www.microsoft.com/en-us/windows)
 [![Intune](https://img.shields.io/badge/Intune-Win32%20app%20requirements-0078D4)](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32)
 
-PowerShell requirement scripts for Intune Win32 apps. Each script writes exactly one value to STDOUT, in a form an Intune requirement rule can parse as **Boolean**, **String**, **Integer** or **Version**, so a rule can check whether an app is installed, which version it is, which operating system the device runs, or which computer model it is.
+PowerShell requirement scripts for Intune Win32 apps. Each script writes exactly one value to STDOUT, in a form an Intune requirement rule can parse as **Boolean**, **String**, **Integer** or **Version**, so a rule can check whether an app is installed, which version it is, which operating system and language the device runs, what hardware it is, or where it sits in Active Directory.
+
+The device scripts replicate Configuration Manager global conditions and collection queries that Intune has no built-in rule for. They take the same values Configuration Manager does, so a requirement can be carried over as it is: see [Configuration Manager global conditions in Intune](#configuration-manager-global-conditions-in-intune).
 
 | Script | Checks |
 |---|---|
@@ -15,7 +17,12 @@ PowerShell requirement scripts for Intune Win32 apps. Each script writes exactly
 | [`Applications/Get-AppRequirementByWmi.ps1`](Applications/Get-AppRequirementByWmi.ps1) | Whether an app is installed, or its version, by its entry in Installed apps |
 | [`Applications/Get-AdobeAcrobatRequirement.ps1`](Applications/Get-AdobeAcrobatRequirement.ps1) | The installed Adobe Acrobat version, as one integer |
 | [`OperatingSystem/Get-OperatingSystemRequirement.ps1`](OperatingSystem/Get-OperatingSystemRequirement.ps1) | Whether the device runs one of the selected operating systems |
+| [`OperatingSystem/Get-OperatingSystemLanguageRequirement.ps1`](OperatingSystem/Get-OperatingSystemLanguageRequirement.ps1) | Whether Windows was installed in one of the selected languages |
 | [`Hardware/Get-ComputerModelRequirement.ps1`](Hardware/Get-ComputerModelRequirement.ps1) | Whether the device is one of the listed computer models |
+| [`Hardware/Get-ComputerManufacturerRequirement.ps1`](Hardware/Get-ComputerManufacturerRequirement.ps1) | Whether the device is from one of the listed manufacturers |
+| [`Hardware/Get-ChassisTypeRequirement.ps1`](Hardware/Get-ChassisTypeRequirement.ps1) | Whether the device has one of the selected chassis types, e.g. is a laptop |
+| [`ActiveDirectory/Get-ActiveDirectorySiteRequirement.ps1`](ActiveDirectory/Get-ActiveDirectorySiteRequirement.ps1) | Whether the device is in one of the listed Active Directory sites |
+| [`ActiveDirectory/Get-OrganizationalUnitRequirement.ps1`](ActiveDirectory/Get-OrganizationalUnitRequirement.ps1) | Whether the device's computer account is in one of the listed OUs |
 
 ## How Intune evaluates a requirement script
 
@@ -35,10 +42,28 @@ Graph stores the value you compare against as a string, and a Boolean as `true` 
 
 > **Use Version, not Integer, for version checks.** An Integer holds one whole number, so it can't represent `24.08` or `124.0.6367.91`. Integer is useful when only the major version matters.
 
+## Configuration Manager global conditions in Intune
+
+Configuration Manager's built-in device conditions, and what replaces each one on an Intune Win32 app:
+
+| Configuration Manager condition | In Intune |
+|---|---|
+| Active Directory site | [`Get-ActiveDirectorySiteRequirement.ps1`](#active-directory-site-script) |
+| Organizational unit (OU) | [`Get-OrganizationalUnitRequirement.ps1`](#organizational-unit-script) |
+| Operating system | [`Get-OperatingSystemRequirement.ps1`](#operating-system-script). Intune's built-in **Operating system architecture** and **Minimum operating system** rules cover simpler cases |
+| Operating system language | [`Get-OperatingSystemLanguageRequirement.ps1`](#operating-system-language-script) |
+| Disk space | Built-in rule: **Disk space required (MB)** |
+| Total physical memory | Built-in rule: **Physical memory required (MB)** |
+| Number of processors | Built-in rule: **Minimum number of logical processors required** |
+| CPU speed | Built-in rule: **Minimum CPU speed required (MHz)** |
+| Configuration Manager site | No script: it applies only to Configuration Manager clients |
+
+The built-in Intune rules are minimums, where Configuration Manager lets you pick an operator; no script here covers the other operators. The computer model, manufacturer and chassis type scripts have no global condition behind them: they replace collection queries on hardware inventory, the usual way to limit a Configuration Manager deployment by hardware.
+
 ## Adding a rule in Intune
 
 1. Copy the script and give the copy a name that identifies the app and check, e.g. `Req-7Zip-Version.ps1`.
-2. Edit its configuration block: the file path or name pattern and `$OutputType` for an application script, `$AllowedOperatingSystems` for the operating system script, or `$AllowedModels` for the computer model script.
+2. Edit its configuration block: the file path or name pattern and `$OutputType` for an application script, or the one list of allowed values in a device script, such as `$AllowedOperatingSystems` or `$AllowedModels`.
 3. In the app's **Requirements** page, under **Configure additional requirement rules**, select **Add**, set **Requirement type** to **Script**, and upload the copy.
 4. Set the rule:
    - **Run script as 32-bit process on 64-bit clients**: No
@@ -200,6 +225,34 @@ How the script identifies the device, with `Get-CimInstance` in `root\cimv2` and
 
 The entry names follow Microsoft's documentation and a published console example. Your console may word an entry slightly differently; only the names in the script's list are accepted.
 
+## Operating system language script
+
+`Get-OperatingSystemLanguageRequirement.ps1` works like a Configuration Manager requirement rule with **Device › Operating system language › One of**. List the allowed languages in `$AllowedLanguages` by culture name, the `Name` that Microsoft's `New-CMRequirementRuleOperatingSystemLanguageValue` cmdlet filters cultures by. The script writes `True` when Windows was installed in one of them, and `False` otherwise:
+
+```powershell
+[string[]]$AllowedLanguages = @(
+    'en-US'
+    'en-GB'
+)
+```
+
+| Requirement | Output data type | Operator | Value |
+|---|---|---|---|
+| Installed in one of the selected languages (Configuration Manager *One of*) | Boolean | Equals | True |
+| Installed in none of them (Configuration Manager *None of*) | Boolean | Equals | False |
+
+The script exits 0 with `True` or `False`, except on a script error (exit 2): an unknown culture name, a name without a region, or an empty list.
+
+- **It checks the language Windows was installed in, not the display language.** The script reads `Win32_OperatingSystem.OSLanguage`, a language code identifier such as 1033 for `en-US`. A device installed in English (United States) that shows Windows in German through a language pack still reports `en-US`.
+- **Microsoft doesn't document which value Configuration Manager's application requirement reads.** It does document that a task sequence's operating system language condition compares against `OSLanguage`, so the script uses the same property. If your Configuration Manager rule behaved differently on devices with language packs, expect this script to differ there.
+- **Each entry is one language and region.** `en-US` doesn't match `en-GB`, and `en` alone is rejected, because `OSLanguage` never reports a language without a region.
+
+To read the value on a device as a culture name:
+
+```powershell
+[cultureinfo]::GetCultureInfo([int](Get-CimInstance -ClassName Win32_OperatingSystem).OSLanguage).Name
+```
+
 ## Computer model script
 
 `Get-ComputerModelRequirement.ps1` works like a Configuration Manager collection query on `SMS_G_System_COMPUTER_SYSTEM.Model`. List the allowed models in `$AllowedModels`, and the script writes `True` when the device's model is one of them, and `False` otherwise. It compares only the model string, so the same script works for any manufacturer. Put each model on its own line in quotes; commenting out a line drops that model:
@@ -236,6 +289,140 @@ The script exits 0 with `True` or `False`, except on a script error (exit 2): an
 
 Like the operating system script, this one also runs on Windows Server, and it queries no Windows Installer classes.
 
+## Computer manufacturer script
+
+`Get-ComputerManufacturerRequirement.ps1` is the computer model script for `SMS_G_System_COMPUTER_SYSTEM.Manufacturer`. List the allowed manufacturers in `$AllowedManufacturers`, and the script writes `True` when the device's `Win32_ComputerSystem.Manufacturer` is one of them, and `False` otherwise:
+
+```powershell
+[string[]]$AllowedManufacturers = @(
+    'Dell Inc.'
+    'HP'
+    'Hewlett-Packard'
+    'LENOVO'
+    'Microsoft Corporation'
+)
+```
+
+Everything about matching is the same as in the [computer model script](#computer-model-script): whole string, ignoring case, no wildcards, spaces trimmed, and an empty value exits 2 so the device meets neither rule. One vendor can report several names across product generations, such as `HP` and `Hewlett-Packard`, so list every name your devices report.
+
+| Requirement | Output data type | Operator | Value |
+|---|---|---|---|
+| Device is from one of the listed manufacturers | Boolean | Equals | True |
+| Device is from none of them | Boolean | Equals | False |
+
+```powershell
+(Get-CimInstance -ClassName Win32_ComputerSystem).Manufacturer
+```
+
+## Chassis type script
+
+`Get-ChassisTypeRequirement.ps1` works like a Configuration Manager collection query on `SMS_G_System_SYSTEM_ENCLOSURE.ChassisTypes`, the usual way to tell laptops from desktops. `$AllowedChassisTypes` lists every chassis type number with its name; uncomment a line to select it, like ticking a check box. The script writes `True` when the device reports any selected number, and `False` otherwise:
+
+```powershell
+[int[]]$AllowedChassisTypes = @(
+    # 3     # Desktop
+    8       # Portable
+    9       # Laptop
+    10      # Notebook
+    # 13    # All in One
+    14      # Sub Notebook
+    # 30    # Tablet
+    31      # Convertible
+    32      # Detachable
+    # ... all 36 numbers are in the script
+)
+```
+
+The shipped selection is an example for laptops. Commonly used groups, to adjust for your hardware:
+
+| Group | Numbers |
+|---|---|
+| Laptops | 8, 9, 10, 14, 31, 32 (the shipped selection) |
+| Tablets | 11, 30 |
+| Desktops | 3, 4, 5, 6, 7, 13, 15, 16, 35 |
+| Servers | 17, 23, 28 |
+
+| Requirement | Output data type | Operator | Value |
+|---|---|---|---|
+| Device has one of the selected chassis types | Boolean | Equals | True |
+| Device has none of them | Boolean | Equals | False |
+
+The script exits 0 with `True` or `False`, except on a script error (exit 2): an empty list, a number outside 1 to 36, a failed WMI query, or a device that reports no chassis type.
+
+- `Win32_SystemEnclosure.ChassisTypes` is an array, and a device can have more than one enclosure. Any selected number among them is a match, as a WQL `ChassisTypes in (...)` query matches any enclosure.
+- The number is whatever the manufacturer wrote to the firmware. Virtual machines often report 1 (Other) or 3 (Desktop), and small desktops report 3, 15 or 35 depending on the vendor, so check real devices first.
+- Microsoft's `Win32_SystemEnclosure` page names 1 to 24 and 30 to 32. The names for 25 to 29 and 33 to 36 are from the DMTF SMBIOS specification.
+
+```powershell
+(Get-CimInstance -ClassName Win32_SystemEnclosure).ChassisTypes
+```
+
+## Active Directory scripts
+
+Both scripts are for devices joined to an on-premises Active Directory domain, including Microsoft Entra hybrid joined devices. A device that isn't domain-joined, such as a Microsoft Entra joined device, is in no site and no OU, so both write `False`: an *Equals False* rule matches it.
+
+**Both read the registry, not a domain controller**, so they also work when the device is away from the corporate network. The cost is that the value can be out of date:
+
+| Script | Registry value | Updated |
+|---|---|---|
+| Site | `SiteName`, else `DynamicSiteName`, in `HKLM\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters` | When Netlogon rediscovers the site, which needs a domain controller |
+| OU | `Distinguished-Name` in `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine` | At each computer Group Policy refresh that reaches a domain controller |
+
+Neither key is redirected for 32-bit processes, so the rule's 32-bit setting doesn't change the result. A domain-joined device with no value recorded exits 2 and meets neither rule.
+
+### Active Directory site script
+
+`Get-ActiveDirectorySiteRequirement.ps1` works like a Configuration Manager requirement rule with **Device › Active Directory site › One of**. List the site names in `$AllowedSites`:
+
+```powershell
+[string[]]$AllowedSites = @(
+    'London'
+    'Wells'
+)
+```
+
+| Requirement | Output data type | Operator | Value |
+|---|---|---|---|
+| Device is in one of the listed sites (Configuration Manager *One of*) | Boolean | Equals | True |
+| Device is in none of them, or isn't domain-joined (Configuration Manager *None of*) | Boolean | Equals | False |
+
+- Site names match whole, ignoring case, with no wildcards.
+- `SiteName` is the site an administrator assigned, by policy or by hand, and it wins when it has a value. Otherwise the script uses `DynamicSiteName`, the site Netlogon discovered. Microsoft doesn't spell out that order in one place, so check a device that has both.
+- A laptop taken off the network keeps reporting the site of the office it last connected from. That makes this script a poor test of where a device *is*; it tells you the site it last belonged to.
+
+To read the site on a device: `nltest /dsgetsite`.
+
+### Organizational unit script
+
+`Get-OrganizationalUnitRequirement.ps1` works like a Configuration Manager requirement rule with **Device › Organizational unit (OU) › One of**. Each entry in `$AllowedOrganizationalUnits` is a hashtable in the form Microsoft's `New-CMRequirementRuleOUValue` cmdlet takes: the OU's distinguished name, and whether to include its child OUs.
+
+```powershell
+[hashtable[]]$AllowedOrganizationalUnits = @(
+    @{ OU = 'OU=Workstations,DC=contoso,DC=com'; IsIncludeSubOU = $true }
+    @{ OU = 'OU=Kiosks,OU=Shared Devices,DC=contoso,DC=com'; IsIncludeSubOU = $false }
+)
+```
+
+| `IsIncludeSubOU` | The computer account matches when it is |
+|---|---|
+| `$false` | Directly in that OU |
+| `$true` | In that OU, or in any OU below it |
+
+| Requirement | Output data type | Operator | Value |
+|---|---|---|---|
+| Device is in one of the listed OUs (Configuration Manager *One of*) | Boolean | Equals | True |
+| Device is in none of them, or isn't domain-joined (Configuration Manager *None of*) | Boolean | Equals | False |
+
+The script exits 2 on an empty list, or an entry without both settings: a missing or misspelled `IsIncludeSubOU` is an error, not a silent `$false`.
+
+- Distinguished names are compared whole, ignoring case and spaces around the commas between their parts. A comma inside a name, written `\,`, is handled. A container such as `CN=Computers,DC=contoso,DC=com` works like an OU.
+- The device's OU is its recorded distinguished name without the first part, the computer's own `CN`.
+- **Microsoft doesn't document the `Distinguished-Name` registry value.** Confirm it on your devices before relying on the rule. After a computer account moves, the value changes at the next Group Policy refresh that reaches a domain controller.
+
+```powershell
+(Get-ItemProperty -LiteralPath 'HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine').'Distinguished-Name'
+```
+
 ## Testing on a device
 
 ```powershell
@@ -260,31 +447,42 @@ On a managed device, the Intune Management Extension logs are in `C:\ProgramData
 ## Verification
 
 - **PSScriptAnalyzer 1.25**: default rules, plus the compatibility rules for Windows PowerShell 5.1 (Windows 10 1607 and 1809, Windows Server 2019 profiles). No findings.
-- **WMI class audit**: every WMI call in the repository is `Get-CimInstance` on `Win32_InstalledWin32Program`, `Win32_OperatingSystem`, `Win32_Processor` or `Win32_ComputerSystem`. No script uses a Windows Installer provider class.
+- **WMI class audit**: every WMI call in the repository is `Get-CimInstance` on `Win32_InstalledWin32Program`, `Win32_OperatingSystem`, `Win32_Processor`, `Win32_ComputerSystem` or `Win32_SystemEnclosure`. No script uses a Windows Installer provider class.
 - **25 file and WMI script cases**, covering every `$OutputType`, missing and present apps, several matching entries (highest version wins, compared as numbers, unreadable entries skipped), configuration errors and a missing WMI class.
 - **13 Acrobat cases**, covering both tracks, unpadded and four-part versions, several products installed together, add-ins, a wrong publisher, a release of 100, and a missing WMI class. Plus a check that the integer keeps eight real versions from Adobe's release notes in order.
 - **31 operating system cases**, covering every entry, both Windows 10 and 11 boundaries (builds 21996 and 22000), 32-bit Windows on a 64-bit processor, Arm reported as ARM or ARM64, multi-session against 64-bit entries, Windows Server, domain controllers, Windows 8.1, misspelled entries and an empty list.
 - **24 computer model cases**, covering listed and unlisted models, models that are a prefix of an entry or longer than one, entries containing `*` or `?` (matched literally, not as wildcards), padded and differently cased `Model` values, a Lenovo machine type and its prefix, a commented-out entry, an empty, blank or null `Model`, an empty list or entry, and a failed WMI query.
+- **21 operating system language cases**, covering listed and unlisted languages, regions of one language told apart (`de-DE` and `de-AT`, `zh-CN` and `zh-TW`), a name without a region, an unknown name, a display name in place of a culture name, a commented-out entry, an empty list or entry, a missing `OSLanguage`, and a failed WMI query.
+- **21 computer manufacturer cases**, mirroring the computer model cases: listed and unlisted manufacturers, prefixes and longer strings, `*` and `?` matched literally, padded and differently cased values, a commented-out entry, an empty, blank or null value, an empty list or entry, and a failed WMI query.
+- **30 chassis type cases**, covering the shipped selection, a desktop selection, the lowest and highest numbers, several values in one array and several enclosures, an enclosure without a value, commented-out and uncommented lines, numbers outside 1 to 36, an empty list, a device reporting no chassis type, and a failed WMI query.
+- **23 Active Directory site cases**, covering listed and unlisted sites, an assigned site overriding the discovered one, an empty assigned site, differently cased and padded names, a device that isn't domain-joined (with stale or unreadable registry data), a domain-joined device with no site, a missing registry key, an empty list or entry, and a failed WMI query.
+- **35 organizational unit cases**, covering an OU with and without child OUs, child and grandchild OUs, parents, look-alike OU names, other domains and child domains, a container, the domain root, case and spacing differences, escaped commas, several entries, a device that isn't domain-joined, a missing, blank or parentless distinguished name, a missing registry key, and entries with a missing, misspelled or non-Boolean setting.
 
-The cases run in PowerShell 7.6 with `Get-CimInstance` stubbed, because the test machine has no WMI. No script has run on a Windows device yet.
+The cases run in PowerShell 7.6 with `Get-CimInstance` and, for the Active Directory scripts, `Get-ItemProperty` stubbed, because the test machine has no WMI or registry. No script has run on a Windows device yet.
 
 ## Repository layout
 
 ```
 IntuneRequirementScripts/
+├── ActiveDirectory/
+│   ├── Get-ActiveDirectorySiteRequirement.ps1   Device is in one of the listed AD sites
+│   └── Get-OrganizationalUnitRequirement.ps1    Computer account is in one of the listed OUs
 ├── Applications/
 │   ├── Get-AdobeAcrobatRequirement.ps1      Adobe Acrobat version as one integer
 │   ├── Get-AppRequirementByFile.ps1         App present / version, by file
 │   └── Get-AppRequirementByWmi.ps1          App present / version, by Win32_InstalledWin32Program
 ├── Hardware/
-│   └── Get-ComputerModelRequirement.ps1     Device is one of the listed computer models
+│   ├── Get-ChassisTypeRequirement.ps1           Device has one of the selected chassis types
+│   ├── Get-ComputerManufacturerRequirement.ps1  Device is from one of the listed manufacturers
+│   └── Get-ComputerModelRequirement.ps1         Device is one of the listed computer models
 └── OperatingSystem/
-    └── Get-OperatingSystemRequirement.ps1   Device runs one of the selected operating systems
+    ├── Get-OperatingSystemLanguageRequirement.ps1   Windows was installed in one of the selected languages
+    └── Get-OperatingSystemRequirement.ps1           Device runs one of the selected operating systems
 ```
 
 ## Sources
 
-Checked on November 3, 2026, and the computer model sources on November 12, 2026:
+Checked on November 3, 2026, the computer model sources on November 12, 2026, and the language, chassis type and Active Directory sources on November 16, 2026:
 
 - [Add and assign Win32 apps to Microsoft Intune](https://learn.microsoft.com/en-us/intune/app-management/deployment/add-win32) — requirement rule settings; STDOUT is read when the exit code is 0 (the page doesn't say what another exit code means for a requirement rule); for detection scripts, a non-zero exit or any STDERR output means not installed
 - [win32LobAppPowerShellScriptRequirement](https://learn.microsoft.com/en-us/graph/api/resources/intune-apps-win32lobapppowershellscriptrequirement?view=graph-rest-1.0), [detection type](https://learn.microsoft.com/en-us/graph/api/resources/intune-apps-win32lobapppowershellscriptdetectiontype?view=graph-rest-1.0) and [operator](https://learn.microsoft.com/en-us/graph/api/resources/intune-apps-win32lobappdetectionoperator?view=graph-rest-1.0) — output data types and operators
@@ -305,6 +503,13 @@ Checked on November 3, 2026, and the computer model sources on November 12, 2026
 - [Win32_ComputerSystem](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-computersystem) — the Model property
 - [Computer make and model with Lenovo real models](https://learn.microsoft.com/en-us/archive/blogs/alex_semi/computer-make-model-with-lenovo-real-models) — Lenovo keeps the product name in `Win32_ComputerSystemProduct.Version`, not `Win32_ComputerSystem.Model`
 - [Document Cloud tracks explained: Continuous vs Classic](https://community.adobe.com/t5/acrobat-reader-discussions/document-cloud-tracks-explained-quot-continuous-quot-vs-quot-classic-quot/td-p/7226460) — the track digit in the build number
+- [`New-CMRequirementRuleOperatingSystemLanguageValue`](https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmrequirementruleoperatingsystemlanguagevalue?view=sccm-ps) — *One of* / *None of* operating system language rules, with cultures chosen by name such as `en-US`
+- [`New-CMTSStepConditionOperatingSystemLanguage`](https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmtsstepconditionoperatingsystemlanguage?view=sccm-ps) — a task sequence compares its language condition with `Win32_OperatingSystem.OSLanguage`
+- [`New-CMRequirementRuleOUValue`](https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmrequirementruleouvalue?view=sccm-ps) — the `OU` and `IsIncludeSubOU` hashtable, and *One of* / *None of* OU rules
+- [`New-CMRequirementRuleActiveDirectorySiteValue`](https://learn.microsoft.com/en-us/powershell/module/configurationmanager/new-cmrequirementruleactivedirectorysitevalue?view=sccm-ps) — *One of* / *None of* Active Directory site rules by site name
+- [Win32_SystemEnclosure](https://learn.microsoft.com/en-us/windows/win32/cimwin32prov/win32-systemenclosure) — `ChassisTypes` is an array from SMBIOS; names for values 1 to 24 and 30 to 32
+- [Registry keys affected by WOW64](https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys) — `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy` is shared, and `HKLM\SYSTEM` isn't among the redirected keys
+- [MS-NRPC abstract data model](https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-nrpc/b8d168ac-ebb6-42f4-bfb2-7a84377f2cbc) — `DynamicSiteName`, the dynamically determined site name of the computer
 
 ## License
 

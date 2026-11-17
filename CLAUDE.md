@@ -53,6 +53,20 @@ Never query `Win32_Product`, or any other class served by the MSI WMI provider (
   - The model is `Win32_ComputerSystem.Model`, trimmed. An empty model throws (exit 2), so neither Equals True nor Equals False matches. Don't write `False` for it: a *None of* rule would then match hardware the script couldn't identify.
   - Matching is exact and case-insensitive: `$AllowedModels -contains $computerModel`, like WQL `Model = '...'`. Wildcards were rejected as too unpredictable, so don't switch to `-like`, `-match` or substring matching; `*` and `?` in an entry stay literal.
   - `$AllowedModels` has one quoted entry per line, with no commas, so any line can be commented out. The model test harness comments out the shipped entries by their exact lines and injects list overrides before the closing `# ----` divider; keep both intact.
+- **`Hardware/Get-ComputerManufacturerRequirement.ps1`** is the model script for `Win32_ComputerSystem.Manufacturer`. Keep the two in step: the same exact matching, and the same exit 2 for an empty value.
+- **`Hardware/Get-ChassisTypeRequirement.ps1`** works like a collection query on `SMS_G_System_SYSTEM_ENCLOSURE.ChassisTypes`, and the output is always Boolean.
+  - `$AllowedChassisTypes` lists all 36 numbers, one per line with its name as a trailing comment; commented-out lines are unselected. Selected lines are `    9       # Laptop` and unselected ones `    # 9     # Laptop`, padded so the names line up. The chassis test harness swaps these exact lines; keep the format.
+  - Any reported number that is selected is a match, across the `ChassisTypes` array and across enclosures. No chassis type at all throws (exit 2).
+  - The shipped selection (8, 9, 10, 14, 31, 32) is an example for laptops, including 2-in-1s; the user chose to include Convertible and Detachable. Hand Held (11), Docking Station (12) and Tablet (30) are deliberately left out.
+- **`OperatingSystem/Get-OperatingSystemLanguageRequirement.ps1`** mirrors a Configuration Manager *Device › Operating system language › One of* rule, and the output is always Boolean.
+  - It compares `Win32_OperatingSystem.OSLanguage` (an LCID) with the LCIDs of the culture names in `$AllowedLanguages`. Microsoft documents `OSLanguage` for the task sequence language condition only; for the application requirement this is an assumption, and the docs say so.
+  - A neutral culture (`en`) or LCID 4096 throws. Windows 10 and later give any well-formed but unknown culture name LCID 4096 instead of an error, so without that check a typo would never match and never fail.
+- **`ActiveDirectory/Get-ActiveDirectorySiteRequirement.ps1` and `Get-OrganizationalUnitRequirement.ps1`** mirror the *Active Directory site* and *Organizational unit (OU)* conditions, and the output is always Boolean.
+  - Not domain-joined (`Win32_ComputerSystem.PartOfDomain` false) writes `False` without reading the registry: the device is known to be in no site or OU. Domain-joined with no recorded value throws (exit 2): the device couldn't be identified.
+  - Both read the registry on purpose, not a domain controller (`ADSystemInfo`, `ActiveDirectorySite::GetComputerSite()`), so they work off the corporate network. Don't switch to a live lookup.
+  - Read the registry with `Get-ItemProperty -LiteralPath`, which the harnesses shadow with a script-scope function. .NET registry calls can't be stubbed on macOS.
+  - Site: `SiteName` wins over `DynamicSiteName` under `HKLM\SYSTEM\CurrentControlSet\Services\Netlogon\Parameters`.
+  - OU: `Distinguished-Name` under `HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Group Policy\State\Machine`, which Microsoft doesn't document. Entries are hashtables with `OU` and `IsIncludeSubOU`, the form `New-CMRequirementRuleOUValue` takes; a missing or non-Boolean `IsIncludeSubOU` throws rather than default to `$false`. Split distinguished names only on commas not preceded by a backslash.
 
 For version comparisons, use the Version data type. Integer fits only the major version, or a packed encoding like Acrobat's.
 
@@ -65,6 +79,11 @@ pwsh -NoProfile -File Tests/Invoke-RequirementTests.ps1   # file and WMI scripts
 pwsh -NoProfile -File Tests/Invoke-AcrobatTests.ps1       # Acrobat script, plus a check that the encoding keeps real versions in order
 pwsh -NoProfile -File Tests/Invoke-OperatingSystemTests.ps1   # operating system script
 pwsh -NoProfile -File Tests/Invoke-ComputerModelTests.ps1     # computer model script
+pwsh -NoProfile -File Tests/Invoke-ComputerManufacturerTests.ps1      # computer manufacturer script
+pwsh -NoProfile -File Tests/Invoke-ChassisTypeTests.ps1               # chassis type script
+pwsh -NoProfile -File Tests/Invoke-OperatingSystemLanguageTests.ps1   # operating system language script
+pwsh -NoProfile -File Tests/Invoke-ActiveDirectorySiteTests.ps1       # Active Directory site script
+pwsh -NoProfile -File Tests/Invoke-OrganizationalUnitTests.ps1        # organizational unit script
 pwsh -NoProfile -File Tests/Test-ScriptQuality.ps1        # lint, ASCII-only, help parses, #Requires 5.1, for every script
 ```
 
@@ -106,6 +125,6 @@ These tests run in PowerShell 7, so they can't catch behavior that differs only 
 
 ## When adding or changing a script
 
-- **README.md:** the Scripts table, the rule recipes, the script's own section, the Verification case counts, Repository layout, and the version badge.
+- **README.md:** the Scripts table, the Configuration Manager global conditions table, the rule recipes, the script's own section, the Verification case counts, Repository layout, and the version badge.
 - **CHANGELOG.md:** use Keep a Changelog with SemVer, and bump the README version badge to match.
-- **Categories:** scripts are grouped in top-level folders, currently `Applications/`, `Hardware/` and `OperatingSystem/`. `Tests/Test-ScriptQuality.ps1` checks every `.ps1` outside `Tests/`, so a new folder is covered automatically.
+- **Categories:** scripts are grouped in top-level folders, currently `ActiveDirectory/`, `Applications/`, `Hardware/` and `OperatingSystem/`. `Tests/Test-ScriptQuality.ps1` checks every `.ps1` outside `Tests/`, so a new folder is covered automatically.

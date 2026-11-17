@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [0.6.0] - 2026-11-16
+
+### Added
+- `OperatingSystem/Get-OperatingSystemLanguageRequirement.ps1` — Win32 app requirement script that mirrors a Configuration Manager *Operating system language One of* requirement rule: list culture names such as `en-US`, and the script writes `True` when `Win32_OperatingSystem.OSLanguage`, the language Windows was installed in, is one of them, otherwise `False`; a name without a region, or an unknown name, exits 2
+- `ActiveDirectory/Get-OrganizationalUnitRequirement.ps1` — Win32 app requirement script that mirrors a Configuration Manager *Organizational unit (OU) One of* requirement rule: each entry takes the OU's distinguished name and `IsIncludeSubOU`, as `New-CMRequirementRuleOUValue` does; the computer's distinguished name is read from the registry value Group Policy records, so the script works off the network; a device that isn't domain-joined writes `False`
+- `ActiveDirectory/Get-ActiveDirectorySiteRequirement.ps1` — Win32 app requirement script that mirrors a Configuration Manager *Active Directory site One of* requirement rule: list site names, and the script writes `True` when the site Netlogon recorded for the device (`SiteName`, else `DynamicSiteName`) is one of them, otherwise `False`; a device that isn't domain-joined writes `False`
+- `Hardware/Get-ComputerManufacturerRequirement.ps1` — Win32 app requirement script that works like a collection query on `SMS_G_System_COMPUTER_SYSTEM.Manufacturer`, with the same exact, case-insensitive matching as the computer model script
+- `Hardware/Get-ChassisTypeRequirement.ps1` — Win32 app requirement script that works like a collection query on `SMS_G_System_SYSTEM_ENCLOSURE.ChassisTypes`: select chassis type numbers 1 to 36 by uncommenting them, and the script writes `True` when the device reports any one of them, otherwise `False`
+- README: a table mapping each built-in Configuration Manager device condition to the script, or the built-in Intune requirement rule, that replaces it
+
 ## [0.5.0] - 2026-11-12
 
 ### Added
